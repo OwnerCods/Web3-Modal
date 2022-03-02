@@ -1,10 +1,6 @@
 "use strict";
 
-/**
- * Example JavaScript code that interacts with the page and Web3 wallets
- */
-
- // Unpkg imports
+// Unpkg imports
 const Web3Modal = window.Web3Modal.default;
 const WalletConnectProvider = window.WalletConnectProvider.default;
 const Fortmatic = window.Fortmatic;
@@ -16,10 +12,8 @@ let web3Modal
 // Chosen wallet provider given by the dialog window
 let provider;
 
-
 // Address of the selected account
 let selectedAccount;
-
 
 /**
  * Setup the orchestra
@@ -33,7 +27,14 @@ function init() {
 
   // Check that the web page is run in a secure context,
   // as otherwise MetaMask won't be available
-  
+  if (location.protocol !== 'http:') {
+    // https://ethereum.stackexchange.com/a/62217/620
+    const alert = document.querySelector("#alert-error-https");
+    alert.style.display = "block";
+    document.querySelector("#btn-connect").setAttribute("disabled", "disabled")
+    return;
+  }
+
   // Tell Web3modal what providers we have available.
   // Built-in web browser provider (only one can exist as a time)
   // like MetaMask, Brave or Opera is added automatically by Web3modal
@@ -42,31 +43,90 @@ function init() {
       package: WalletConnectProvider,
       options: {
         // Mikko's test key - don't copy as your mileage may vary
-        infuraId: "8043bb2cf99347b1bfadfb233c5325c0",
+        infuraId: "ed6de67cf02f4160b5ed16c680ae5784" //"8043bb2cf99347b1bfadfb233c5325c0",
       }
     },
 
     fortmatic: {
       package: Fortmatic,
       options: {
-        // Mikko's TESTNET api key
-        key: "pk_test_391E26A3B43A3350"
+        key: "pk_live_B426D2BE3A6018B8"
       }
     }
   };
 
   web3Modal = new Web3Modal({
-    cacheProvider: false, // optional
+    cacheProvider:true, // optional
     providerOptions, // required
     disableInjectedProvider: false, // optional. For MetaMask / Brave / Opera.
   });
-
+  
   console.log("Web3Modal instance is", web3Modal);
-}
+
+ }
 
 
 /**
  * Kick in the UI action after Web3modal dialog has chosen a provider
+
+ async function fetchAccountData() {
+
+  // Get a Web3 instance for the wallet
+  const web3 = new Web3(provider);
+// web3.eth.defaultAccount = selectedAccount
+  console.log("Web3 instance is", web3);
+
+  // Get connected chain id from Ethereum node
+  const chainId = await web3.eth.getChainId();
+  // Load chain information over an HTTP API
+  const chainData = evmChains.getChain(chainId);
+  //document.querySelector("#network-name").textContent = chainData.name;
+
+  document.querySelector("#network-name").textContent = chainData.name;
+
+  // Get list of accounts of the connected wallet
+  const accounts = await web3.eth.getAccounts();
+  web3.eth.defaultAccount = accounts[0]
+  // MetaMask does not give you all accounts, only the selected account
+  console.log("Got accounts", accounts);
+  selectedAccount = accounts[0];
+
+  document.querySelector("#selected-account").textContent = selectedAccount.slice(0,5) + "..." + selectedAccount.slice(selectedAccount.length - 5);
+
+ 
+ const template = document.querySelector("#template-balance");
+  const accountContainer = document.querySelector("#accounts");
+   // Go through all accounts and get their ETH balance
+  const rowResolvers = accounts.map(async (address) => {
+    const balance = await web3.eth.getBalance(address);
+    // ethBalance is a BigNumber instance
+    // https://github.com/indutny/bn.js/
+    const ethBalance = web3.utils.fromWei(balance, "ether");
+    const humanFriendlyBalance = parseFloat(ethBalance).toFixed(4);
+    // Fill in the templated row and put in the document
+    const clone = template.content.cloneNode(true);
+    clone.querySelector(".address").textContent = address;
+    clone.querySelector(".balance").textContent = humanFriendlyBalance;
+    accountContainer.appendChild(clone);
+  });
+
+  // Because rendering account does its own RPC commucation
+  // with Ethereum node, we do not want to display any results
+  // until data for all accounts is loaded
+  
+  
+  // Display fully loaded UI for wallet data
+  document.querySelector("#prepare").style.display = "none";
+  document.querySelector("#connected").style.display = "block";
+}  */
+
+
+
+/**
+ * Fetch account data for UI when
+ * - User switches accounts in wallet
+ * - User switches networks in wallet
+ * - User connects wallet initially
  */
 async function fetchAccountData() {
 
@@ -88,14 +148,14 @@ async function fetchAccountData() {
   console.log("Got accounts", accounts);
   selectedAccount = accounts[0];
 
-  document.querySelector("#selected-account").textContent = selectedAccount;
-
+  //document.querySelector("#selected-account").textContent = selectedAccount;
+    document.querySelector("#selected-account").textContent = selectedAccount.slice(0,5) + "..." + selectedAccount.slice(selectedAccount.length - 5);
   // Get a handl
-  const template = document.querySelector("#template-balance");
-  const accountContainer = document.querySelector("#accounts");
+  
+
 
   // Purge UI elements any previously loaded accounts
-  accountContainer.innerHTML = '';
+  
 
   // Go through all accounts and get their ETH balance
   const rowResolvers = accounts.map(async (address) => {
@@ -105,10 +165,10 @@ async function fetchAccountData() {
     const ethBalance = web3.utils.fromWei(balance, "ether");
     const humanFriendlyBalance = parseFloat(ethBalance).toFixed(4);
     // Fill in the templated row and put in the document
-    const clone = template.content.cloneNode(true);
-    clone.querySelector(".address").textContent = address;
-    clone.querySelector(".balance").textContent = humanFriendlyBalance;
-    accountContainer.appendChild(clone);
+   
+   const BalanceOfUser = document.querySelector('.balance');
+   BalanceOfUser.innerHTML = humanFriendlyBalance;
+   
   });
 
   // Because rendering account does its own RPC commucation
@@ -120,32 +180,6 @@ async function fetchAccountData() {
   document.querySelector("#prepare").style.display = "none";
   document.querySelector("#connected").style.display = "block";
 }
-
-
-
-/**
- * Fetch account data for UI when
- * - User switches accounts in wallet
- * - User switches networks in wallet
- * - User connects wallet initially
- */
-async function refreshAccountData() {
-
-  // If any current data is displayed when
-  // the user is switching acounts in the wallet
-  // immediate hide this data
-  document.querySelector("#connected").style.display = "none";
-  document.querySelector("#prepare").style.display = "block";
-
-  // Disable button while UI is loading.
-  // fetchAccountData() will take a while as it communicates
-  // with Ethereum node via JSON-RPC and loads chain data
-  // over an API call.
-  document.querySelector("#btn-connect").setAttribute("disabled", "disabled")
-  await fetchAccountData(provider);
-  document.querySelector("#btn-connect").removeAttribute("disabled")
-}
-
 
 /**
  * Connect wallet button pressed.
@@ -175,9 +209,26 @@ async function onConnect() {
     fetchAccountData();
   });
 
-  await refreshAccountData();
+   await refreshAccountData();
 }
 
+
+async function refreshAccountData() {
+
+  // If any current data is displayed when
+  // the user is switching acounts in the wallet
+  // immediate hide this data
+  document.querySelector("#connected").style.display = "none";
+  document.querySelector("#prepare").style.display = "block";
+
+  // Disable button while UI is loading.
+  // fetchAccountData() will take a while as it communicates
+  // with Ethereum node via JSON-RPC and loads chain data
+  // over an API call.
+  document.querySelector("#btn-connect").setAttribute("disabled", "disabled")
+  await fetchAccountData(provider);
+  document.querySelector("#btn-connect").removeAttribute("disabled")
+}
 /**
  * Disconnect wallet button pressed.
  */
@@ -186,7 +237,7 @@ async function onDisconnect() {
   console.log("Killing the wallet connection", provider);
 
   // TODO: Which providers have close method?
-  if(provider.close) {
+  if (provider.close) {
     await provider.close();
 
     // If the cached provider is not cleared,
@@ -200,8 +251,18 @@ async function onDisconnect() {
   selectedAccount = null;
 
   // Set the UI back to the initial state
+
+ 
+  document.querySelector('#network').style.display = "none";
   document.querySelector("#prepare").style.display = "block";
   document.querySelector("#connected").style.display = "none";
+}
+
+
+
+function validate_txhash(addr)
+{
+  return /^0x([A-Fa-f0-9]{64})$/.test(addr);
 }
 
 
@@ -212,4 +273,5 @@ window.addEventListener('load', async () => {
   init();
   document.querySelector("#btn-connect").addEventListener("click", onConnect);
   document.querySelector("#btn-disconnect").addEventListener("click", onDisconnect);
+  
 });
